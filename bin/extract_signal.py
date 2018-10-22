@@ -28,7 +28,7 @@ class Ioncurrent:
                 plot_EIC(self.pos, self.time_p, target_mass, 1000,
                          start=self.time_p[scan_start], end=self.time_p[scan_end-1], title='TIC (+)')
         else:
-            eic_with_zero = np.array(extract_ion_current(self.pos, target_mass, tole, scan_start, scan_end))
+            eic_with_zero = extract_ion_current(self.pos, target_mass, tole, scan_start, scan_end)
             # 将0强度点改成非0数字，防止除零错误出现
             eic = np.where(eic_with_zero == 0, 0.01, eic_with_zero)
             if plot == True:
@@ -88,8 +88,25 @@ def sep_polarity(ms):
         time_neg = np.array([round((ms_neg[i].rt_in_second / 60), 5) for i in range(0, len(ms_neg))])
         tic_neg = np.array([float(ms_neg[i].tic) for i in range(0, len(ms_neg))])
     output = Ioncurrent(ms_pos, ms_neg, tic_pos, tic_neg, time_pos, time_neg)
-    print('Polarity: %s' % [i for i in pola])
+    print('Polarity of this data file: %s' % [i for i in pola])
     return output, pola
+
+
+## 提取离子流
+#def extract_ion_current(mzfile, target_mass, tolerance=0.001, start_scan=0, end_scan=0):
+#    target_intense = []
+#    if end_scan == 0:
+#        end_scan = len(mzfile)
+#    for i in range(start_scan, end_scan):
+#        spec_ms1 = mzfile[i].peaks
+#        # 获取目标离子窗口中强度最高的离子
+#        try:
+#            intense_max = int(max([i[1] for i in spec_ms1 if (target_mass - tolerance)
+#                          < i[0] < (target_mass + tolerance)]))
+#        except:
+#            intense_max = 0
+#        target_intense.append(intense_max)
+#    return np.array(target_intense)
 
 
 # 提取离子流
@@ -98,13 +115,13 @@ def extract_ion_current(mzfile, target_mass, tolerance=0.001, start_scan=0, end_
     if end_scan == 0:
         end_scan = len(mzfile)
     for i in range(start_scan, end_scan):
-        spec_ms1 = mzfile[i].peaks
+        spec_ms = mzfile[i].peaks
+        mzs = spec_ms[:,0]
+        intense = spec_ms[:,1]
         # 获取目标离子窗口中强度最高的离子
-        try:
-            intense_max = int(max([i[1] for i in spec_ms1 if (target_mass - tolerance)
-                          < i[0] < (target_mass + tolerance)]))
-        except:
-            intense_max = 0
+        # 获取目标离子范围内的m/z
+        index = np.argwhere((mzs > (target_mass - tolerance)) & (mzs < (target_mass + tolerance)))
+        intense_max = int(max(intense[index])) if len(index) != 0 else 0.01
         target_intense.append(intense_max)
     return np.array(target_intense)
 

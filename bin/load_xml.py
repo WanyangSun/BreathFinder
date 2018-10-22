@@ -4,6 +4,7 @@ import struct
 import time
 import zlib
 import xmltodict
+import numpy as np
 
 # 定义谱图类
 class Spectrum:
@@ -139,7 +140,7 @@ def read_mzxml_scan(scan, index, filename_output, struct_iter_ok, canary):
             struct_iter_ok = False
         canary = False
     if peak_string != '':
-        peaks = decode_spectrum(peak_string, peaks_precision, peaks_compression, struct_iter_ok)
+        peaks = np.array(decode_spectrum(peak_string, peaks_precision, peaks_compression, struct_iter_ok))
     else:
         peaks = None
     if ms_level == 1:
