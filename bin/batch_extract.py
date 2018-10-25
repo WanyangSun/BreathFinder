@@ -8,17 +8,19 @@ from progressbar import *
 import extract_signal as es
 import stat_signal as ss
 
+dic_pola = {'+':'positive', '-':'negative'}
 
 # 给出数据导入和导出的文件（夹）路径
-def gen_workspace(filename):
+def gen_workspace(filename, listname):
     data_input_path = r'..\data_input' + '\\' + filename
+    list_input_path = r'..\data_input' + '\\' + listname
     data_output_path = r'..\data_output'
     try:
         os.makedirs(r'..\data_output')
         print('The output folder has been established.')
     except Exception as e:
         print('The output folder is already exist.')
-    return data_input_path, data_output_path
+    return data_input_path, data_output_path, list_input_path
 
 
 ## 批量提取离子流
@@ -35,28 +37,13 @@ def get_unique_mz(mz_list, mz_unique, mz_Da=0.001, mz_ppm=2):
         mz_list = mz_list.drop(mz_interval)
     return mz_unique
 
-## 获取唯一mz，递归算法（淘汰）
-#def get_unique_mz(mz_list, mz_unique, mz_Da=0.001, mz_ppm=2):
-#    if len(mz_list) == 0:
-#        return mz_unique
-#    if len(mz_list) != 0:
-#        mz = mz_list[0]
-#        mz_unique.append(mz)
-#        if mz*(1e-6*mz_ppm) <= mz_Da:
-#            mz_interval = mz_list[(mz_list>mz-mz_Da) & (mz_list<mz+mz_Da)]
-#        else:
-#            mz_interval = mz_list[(mz_list>mz*(1-1e-6*mz_ppm)) & (mz_list<mz*(1+1e-6*mz_ppm))]
-#        mz_remain = mz_list.drop(mz_interval)
-#        return get_unique_mz(mz_remain, mz_unique, mz_Da, mz_ppm)
-
-
 # 获取ms数据中强度大于设定阈值的mzlist
-def get_unique_mzlist(msdata, intensity_threshold=1e3, mz_Da=0.001, mz_ppm=2, start_id=0, end_id=0):
+def get_unique_mzlist(msdata, scan_index, intensity_threshold=1e3, mz_Da=0.001, mz_ppm=2):
     start_time = time.time()
     mzlist_all = []
     # 获取全部图谱中的mz
-    for i in range(start_id, end_id):
-        mzlist = msdata[i].peaks
+    for i in scan_index[0]:
+        mzlist = msdata.data[i].peaks
         mzlist_all += [mzlist[i][0] for i in range(1,len(mzlist)) if
                        mzlist[i-1][1] < mzlist[i][1] > mzlist[i+1][1]
                        and mzlist[i][1] > intensity_threshold]
@@ -65,8 +52,7 @@ def get_unique_mzlist(msdata, intensity_threshold=1e3, mz_Da=0.001, mz_ppm=2, st
     # print(len(mzlist_all))
     # 排序后，获取mz_Da和mz_ppm窗口以外的mz
     mz_unique = []
-    mzlist_unique = []
-    mzlist_unique = get_unique_mz(mzlist, mz_unique)
+    mzlist_unique = get_unique_mz(mzlist, mz_unique, mz_Da, mz_ppm)
     end_time = time.time()
     print('{} unique m/z values were extracted. Running time:{:.4f} s.'.format(
             len(mzlist_unique), (end_time - start_time)))
@@ -101,26 +87,18 @@ def check_sig(msdata, polarity, smooth_num=7, smooth_poly=1, baseline_poly=1,
 
 
 # 交互式判断分区是否合理
-def check_all_sig(msdata, pola, smooth_num=7, smooth_poly=1, baseline_poly=1,
+def check_all_sig(dic_msdata, pola, smooth_num=7, smooth_poly=1, baseline_poly=1,
                       index_window=3, spec_num=8, signal_weight=0.9,
                       t_start=0, t_end=0):
-    bg_id_p = 0
-    sig_id_p = 0
-    bg_id_n = 0
-    sig_id_n = 0
+    id_p, id_n = 0, 0
+    dic_id = {'+':id_p, '-':id_n}
     for i in pola:
         print('Please check the extraction result.')
-        if i == '+':
-            count = 0
-            bg_id_p, sig_id_p = check_sig(msdata, i, smooth_num, smooth_poly, baseline_poly,
-                                          index_window, spec_num, signal_weight, count, t_start, t_end)
-        if i == '-':
-            count = 0
-            bg_id_n, sig_id_n = check_sig(msdata, i, smooth_num, smooth_poly, baseline_poly,
-                                          index_window, spec_num, signal_weight, count, t_start, t_end)
-    id_p = [sig_id_p, bg_id_p]
-    id_n = [sig_id_n, bg_id_n]
-    return id_p, id_n
+        count = 0
+        bg_id, sig_id = check_sig(dic_msdata[i], i, smooth_num, smooth_poly, baseline_poly,
+                                      index_window, spec_num, signal_weight, count, t_start, t_end)
+        dic_id[i] = [sig_id, bg_id]
+    return dic_id
 
 
 # 生成所有质荷比的时间×强度矩阵
@@ -147,30 +125,19 @@ def check_continuous(eic, min_num=5, check=False):
 # 生成时间强度矩阵，并保存到output文件夹
 def get_intense_matrix(msdata, pola, time_list, mzlist_uni, filepath_intense, min_num=5, start_in_min=0, end_in_min=0):
     total = len(mzlist_uni)
-    mzlist_uni_temp = mzlist_uni.copy()
+    mzlist_uni_temp = mzlist_uni[:]
     mz_intense_list = []
     widgets = ['Progress: ',Percentage(), ' ', Bar('#'),' ', Timer(),' ', ETA(),' ']
     pbar = ProgressBar(widgets=widgets, maxval=10*total).start()
-    if pola == '+':
-        print('\nStep 1 Establising positive intensity table.\n')
-        for index, mz in enumerate(mzlist_uni):
-            pbar.update(10 * index + 1)
-            eic_temp = msdata.eic_p(mz, t_start=start_in_min, t_end=end_in_min)
-            check = check_continuous(eic_temp, min_num)
-            if check == True:
-                mz_intense_list.append(eic_temp)
-            else:
-                mzlist_uni_temp.remove(mz)
-    if pola == '-':
-        print('\nStep 1 Establising negative intensity table.\n')
-        for index, mz in enumerate(mzlist_uni):
-            pbar.update(10 * index + 1)
-            eic_temp = msdata.eic_n(mz, t_start=start_in_min, t_end=end_in_min)
-            check = check_continuous(eic_temp, min_num)
-            if check == True:
-                mz_intense_list.append(eic_temp)
-            else:
-                mzlist_uni_temp.remove(mz)
+    print('\nStep 1 Establising %s intensity table.\n' % (dic_pola[pola]))
+    for index, mz in enumerate(mzlist_uni):
+        pbar.update(10 * index + 1)
+        eic_temp = msdata.eic(mz, t_start=start_in_min, t_end=end_in_min)
+        check = check_continuous(eic_temp, min_num)
+        if check == True:
+            mz_intense_list.append(eic_temp)
+        else:
+            mzlist_uni_temp.remove(mz)
 #            print(len(mzlist_uni))
     pbar.finish()
     df_intense = gen_intense_matrix(mz_intense_list, mzlist_uni_temp, time_list, filepath_intense)
@@ -184,16 +151,10 @@ def get_signals_matrix(msdata, pola, time_list, id_range, mzlist_uni, mz_intense
     widgets = ['Progress: ',Percentage(), ' ', Bar('#'),' ', Timer(),' ', ETA(),' ']
     pbar = ProgressBar(widgets=widgets, maxval=10*total).start()
     extract_data = []
-    if pola == '+':
-        print('\nStep 2 Extracting positive signals and backgrounds matrix.\n')
-        for index, mz in enumerate(mzlist_uni):
-            pbar.update(10 * index + 1)
-            extract_data.append(ss.Stat_signal(id_range[0], id_range[1], msdata.eic_p(mz)))
-    if pola == '-':
-        print('\nStep 2 Extracting negative signals and backgrounds matrix.\n')
-        for index, mz in enumerate(mzlist_uni):
-            pbar.update(10 * index + 1)
-            extract_data.append(ss.Stat_signal(id_range[0], id_range[1], msdata.eic_n(mz)))
+    print('\nStep 2 Extracting %s signals and backgrounds matrix.\n' % (dic_pola[pola]))
+    for index, mz in enumerate(mzlist_uni):
+        pbar.update(10 * index + 1)
+        extract_data.append(ss.Stat_signal(id_range[0], id_range[1], msdata.eic(mz)))
     pbar.finish()
         # 生成呼气信号平均值&标准偏差矩阵
     ss.batch_statistic(mzlist_uni, time_list, mz_intense_list, extract_data, filepath)
@@ -201,7 +162,7 @@ def get_signals_matrix(msdata, pola, time_list, id_range, mzlist_uni, mz_intense
 
 
 # 根据生成的信号区间，提取一个样品中的全部mz的对应信号
-def extract_all_mz(output_path, msdata, pola, id_p=0, id_n=0,
+def extract_all_mz(output_path, dic_msdata, pola, dic_id,
                    intensity_thre=1e5, mz_Da=0.001, mz_ppm=2, min_num=5, t_start=0, t_end=0, 
                    ext_matrix=True, ext_signal=True):
     '''
@@ -234,54 +195,34 @@ def extract_all_mz(output_path, msdata, pola, id_p=0, id_n=0,
     Returns:
         [DataFrame] -- [Time-intensity matrices.]
     '''
-    filename = msdata.pos[0].filename.split('.')[0]
-    df_intense_p = []
-    df_intense_n = []
+    msdata = list(dic_msdata.values())[0]
+    filename = msdata.data[0].filename.split('.')[0]
+    df_intense_p, df_intense_n = [], []
+    dic_df_in = {'+':df_intense_p, '-':df_intense_p}
     for i in pola:
+        msdata = dic_msdata.get(i)
         filepath = output_path + '\\' + filename + '_' + i + '_signals' + '.csv'
         filepath_intense = output_path + '\\' + filename + '_' + i + '_intensity_matrix' + '.csv'
-        if i == '+':
-            if t_end == 0:
-                t_end = msdata.time_p[-1]
-            # 将保留时间转换为scan id
-            start_id, end_id = es.time_to_scannum(msdata, i, t_start, t_end)
-            time_list = [i for i in msdata.time_p if t_start <= i <= t_end]
-            mzlist_uni, mzlist_all = get_unique_mzlist(msdata.pos, intensity_thre, 
-                                                       mz_Da, mz_ppm, start_id, end_id)
-            if ext_matrix:
-                # 提取所有m/z的离子强度信息
-                mzlist_uni, mz_intense_list, df_intense_p = get_intense_matrix(msdata, '+', time_list, 
-                                                                   mzlist_uni, filepath_intense, 
-                                                                   min_num, t_start, t_end)
-            if ext_signal:    
-                if id_p != 0:
-                    # 判断id_p有无
-                    if id_p[0] == []:
-                        print('No signal has been detected.')
-                    else:
-                        # 生成呼气信号平均值&标准偏差矩阵
-                        get_signals_matrix(msdata, i, time_list, id_p, mzlist_uni, mz_intense_list, filepath)
-        if i == '-':
-            if t_end == 0:
-                t_end = msdata.time_n[-1]
-            # 将保留时间转换为scan id
-            start_id, end_id = es.time_to_scannum(msdata, i, t_start, t_end)
-            time_list = [i for i in msdata.time_n if t_start <= i <= t_end]
-            mzlist_uni, mzlist_all = get_unique_mzlist(msdata.neg, intensity_thre, 
-                                                       mz_Da, mz_ppm, start_id, end_id)
-            if ext_matrix:
-                # 提取所有m/z的离子强度信息
-                mzlist_uni, mz_intense_list, df_intense_n = get_intense_matrix(msdata, '-', time_list, 
-                                                                   mzlist_uni, filepath_intense,
-                                                                   min_num, t_start, t_end)
-            if ext_signal:
-                if id_n != 0:
-                    # 判断id_p有无
-                    if id_n[0] == []:
-                        print('No signal has been detected.')
-                    else:
-                        # 生成呼气信号平均值&标准偏差矩阵
-                        get_signals_matrix(msdata, i, time_list, id_p, mzlist_uni, mz_intense_list, filepath)
+        if t_end == 0:
+            t_end = msdata.time[-1]
+        # 将保留时间转换为scan id
+        scan_index = np.where((msdata.time>=t_start) & (msdata.time<=t_end))
+        time_list = msdata.time[scan_index]
+        mzlist_uni, mzlist_all = get_unique_mzlist(msdata, scan_index, intensity_thre, mz_Da, mz_ppm)
+        if ext_matrix:
+            # 提取所有m/z的离子强度信息
+            mzlist_uni, mz_intense_list, df_intense = get_intense_matrix(msdata, i, time_list,
+                                                               mzlist_uni, filepath_intense,
+                                                               min_num, t_start, t_end)
+        dic_df_in[i], id_extract = df_intense, dic_id[i]
+        if ext_signal:
+            if id_extract != 0:
+                # 判断id_p有无
+                if id_extract[0] == []:
+                    print('No signal has been detected.')
+                else:
+                    # 生成呼气信号平均值&标准偏差矩阵
+                    get_signals_matrix(msdata, i, time_list, id_extract, mzlist_uni, mz_intense_list, filepath)
     # 输出离子时间×强度矩阵
     return df_intense_p, df_intense_n, mzlist_uni
 

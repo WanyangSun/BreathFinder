@@ -5,139 +5,73 @@ import peakutils
 
 
 # 离子流相关操作
-class Ioncurrent:
+class Massdata:
 
-    def __init__(self, mspos, msneg, tic_p, tic_n, time_p, time_n):
-        self.pos = mspos
-        self.neg = msneg
-        self.tic_p = tic_p
-        self.tic_n = tic_n
-        self.time_p = time_p
-        self.time_n = time_n
-        self.scan_p = len(mspos)
-        self.scan_n = len(msneg)
-#        self.dic_time_p = pd.Series(time_p)
-#        self.dic_time_n = pd.Series(time_n)
+    def __init__(self, ms, polarity):
+        self.data = ms
+        self.pola = polarity
+        self.tic = np.array([float(ms[i].tic) for i in range(0, len(ms))])
+        self.time = np.array([round((ms[i].rt_in_second / 60), 5) for i in range(0, len(ms))])
+        self.scan = np.array([i for i in range(0, len(ms))])
 
     # 提取离子流
-    def eic_p(self, target_mass=0, tole=0.001, start=0, end=5, plot=False, t_start=0, t_end=0):
-        scan_start, scan_end = time_to_scannum(self, '+', t_start, t_end)
-        if target_mass is 0:
-            eic = np.array([intense for i, intense in enumerate(self.tic_p) if i in range(scan_start, scan_end)])
-            if plot == True:
-                plot_EIC(self.pos, self.time_p, target_mass, 1000,
-                         start=self.time_p[scan_start], end=self.time_p[scan_end-1], title='TIC (+)')
+    def __extract_ion_current(self, target_mass, scan_index, tolerance=0.001):
+        target_intense = []
+        if target_mass == 0:
+            target_intense = self.tic[scan_index]
         else:
-            eic_with_zero = extract_ion_current(self.pos, target_mass, tole, scan_start, scan_end)
-            # 将0强度点改成非0数字，防止除零错误出现
-            eic = np.where(eic_with_zero == 0, 0.01, eic_with_zero)
-            if plot == True:
-                plot_EIC(self.pos, self.time_p, target_mass, tole,
-                         start=self.time_p[scan_start], end=self.time_p[scan_end-1])
-        return eic
+            for i in scan_index[0]:
+                spec_ms = self.data[i].peaks
+                mzs = spec_ms[:, 0]
+                intense = spec_ms[:, 1]
+                # 获取目标离子窗口中强度最高的离子
+                # 获取目标离子范围内的m/z
+                index = np.argwhere((mzs > (target_mass - tolerance)) & (mzs < (target_mass + tolerance)))
+                # 将0强度点改成非0数字，防止除零错误出现
+                intense_max = int(max(intense[index])) if len(index) != 0 else 0.01
+                target_intense.append(intense_max)
+        return np.array(target_intense)
 
-    def eic_n(self, target_mass=0, tole=0.001, start=0, end=5, plot=False, t_start=0, t_end=0):
-        scan_start, scan_end = time_to_scannum(self, '-', t_start, t_end)
-        if target_mass is 0:
-            eic = np.array([intense for i, intense in enumerate(self.tic_n) if i in range(scan_start, scan_end)])
-            if plot == True:
-                plot_EIC(self.neg, self.time_n, target_mass, 1000,
-                         start=self.time_p[scan_start], end=self.time_p[scan_end-1], title='TIC (-)')
+    # 绘制离子流
+    def __plot_eic(self, eic, time, target_mass):
+        plt.figure(figsize=(10.5, 5))
+        plt.plot(time, eic)
+        pola = '+' if self.pola == '+' else '-'
+        if target_mass == 0:
+            plt.title('TIC (%s)' % pola)
         else:
-            eic_with_zero = np.array(extract_ion_current(self.neg, target_mass, tole, scan_start, scan_end))
-            # 将0强度点改成非0数字，防止除零错误出现
-            eic = np.where(eic_with_zero == 0, 0.01, eic_with_zero)
-            if plot == True:
-                plot_EIC(self.neg, self.time_n, target_mass, tole,
-                         start=self.time_p[scan_start], end=self.time_p[scan_end-1])
+            plt.title('(%s) m/z %s ' % (self.pola, target_mass))
+        plt.xlabel("time (min)")
+        plt.ylabel("Intensity")
+        plt.xlim(time[0], time[-1])
+        plt.show()
+
+    # 提取离子流
+    def eic(self, target_mass=0, tole=0.001, plot=False, t_start=0, t_end=0):
+        if t_end == 0:
+            t_end = self.time[-1]
+        scan_index = np.where((self.time>=t_start) & (self.time<=t_end))
+        time_list = self.time[scan_index]
+        eic = self.__extract_ion_current(target_mass, scan_index, tole)
+        if plot == True:
+            self.__plot_eic(eic, time_list, target_mass)
         return eic
-
-
-# 给定某一个时间区间，提取区间内数据
-def time_to_scannum(msdata, pola, start_in_min, end_in_min):
-    if pola == '+':
-        if end_in_min == 0:
-            end_in_min = msdata.time_p[-1]
-        id_list = [i for i, t in enumerate(msdata.time_p) if
-                   start_in_min <= t <= end_in_min]
-    if pola == '-':
-        if end_in_min == 0:
-            end_in_min = msdata.time_n[-1]
-        id_list = [i for i, t in enumerate(msdata.time_n) if
-                   start_in_min <= t <= end_in_min]
-    start_scan = id_list[0]
-    end_scan = id_list[-1] + 1
-    return start_scan, end_scan
 
 
 # 拆分ms1正负离子数据集，获取polarity（极性）信息
 def sep_polarity(ms):
     ms_pos = []
-    time_pos= []
     ms_neg = []
-    time_neg = []
-    tic_pos = []
-    tic_neg = []
     pola = set([i.polarity for i in ms[0:2]])
     if '+' in pola:
         ms_pos = [i for i in ms if i.polarity == '+']
-        time_pos = np.array([round((ms_pos[i].rt_in_second / 60), 5) for i in range(0, len(ms_pos))])
-        tic_pos = np.array([float(ms_pos[i].tic) for i in range(0, len(ms_pos))])
     if '-' in pola:
         ms_neg = [i for i in ms if i.polarity == '-']
-        time_neg = np.array([round((ms_neg[i].rt_in_second / 60), 5) for i in range(0, len(ms_neg))])
-        tic_neg = np.array([float(ms_neg[i].tic) for i in range(0, len(ms_neg))])
-    output = Ioncurrent(ms_pos, ms_neg, tic_pos, tic_neg, time_pos, time_neg)
+    output_pos = Massdata(ms_pos, '+')
+    output_neg = Massdata(ms_neg, '-')
     print('Polarity of this data file: %s' % [i for i in pola])
-    return output, pola
+    return output_pos, output_neg, pola
 
-
-## 提取离子流
-#def extract_ion_current(mzfile, target_mass, tolerance=0.001, start_scan=0, end_scan=0):
-#    target_intense = []
-#    if end_scan == 0:
-#        end_scan = len(mzfile)
-#    for i in range(start_scan, end_scan):
-#        spec_ms1 = mzfile[i].peaks
-#        # 获取目标离子窗口中强度最高的离子
-#        try:
-#            intense_max = int(max([i[1] for i in spec_ms1 if (target_mass - tolerance)
-#                          < i[0] < (target_mass + tolerance)]))
-#        except:
-#            intense_max = 0
-#        target_intense.append(intense_max)
-#    return np.array(target_intense)
-
-
-# 提取离子流
-def extract_ion_current(mzfile, target_mass, tolerance=0.001, start_scan=0, end_scan=0):
-    target_intense = []
-    if end_scan == 0:
-        end_scan = len(mzfile)
-    for i in range(start_scan, end_scan):
-        spec_ms = mzfile[i].peaks
-        mzs = spec_ms[:,0]
-        intense = spec_ms[:,1]
-        # 获取目标离子窗口中强度最高的离子
-        # 获取目标离子范围内的m/z
-        index = np.argwhere((mzs > (target_mass - tolerance)) & (mzs < (target_mass + tolerance)))
-        intense_max = int(max(intense[index])) if len(index) != 0 else 0.01
-        target_intense.append(intense_max)
-    return np.array(target_intense)
-
-
-# 绘制离子流
-def plot_EIC(ms1data, time, target_mass, tolerance=0.001, start=0, end=5, title='TIC'):
-    intense = extract_ion_current(ms1data, target_mass, tolerance)
-    plt.figure(figsize=(10.5, 5))
-    plt.plot(time, intense)
-    if target_mass is 0:
-        plt.title(title)
-    else:
-        plt.title('m/z %s ' % (target_mass))
-    plt.xlabel("time (min)")
-    plt.ylabel("Intensity")
-    plt.xlim(start, end)
 
 # 绘制baseline
 def plot_baseline(time, Y, baseline_para):
@@ -236,16 +170,10 @@ def get_baseline(intense, time, smooth_num=7, smooth_poly=1,
 def get_key_index(msdata, pola, target_mass=0, smooth_num=7, smooth_poly=1, baseline_poly=1,
                   index_window=3, spec_num=8, signal_weight=0.9, start_in_min=0, end_in_min=0):
 #    start_scan, end_scan = time_to_scannum(msdata, '+', start_time, end_time)
-    if pola == '+':
-        if end_in_min == 0:
-            end_in_min = msdata.time_p[-1]
-        intense = msdata.eic_p(target_mass, t_start=start_in_min, t_end=end_in_min)
-        time = np.array([i for i in msdata.time_p if start_in_min <= i <= end_in_min])
-    if pola == '-':
-        if end_in_min == 0:
-            end_in_min = msdata.time_n[-1]
-        intense = msdata.eic_n(target_mass, t_start=start_in_min, t_end=end_in_min)
-        time = np.array([i for i in msdata.time_n if start_in_min <= i <= end_in_min])
+    if end_in_min == 0:
+        end_in_min = msdata.time[-1]
+    intense = msdata.eic(target_mass, t_start=start_in_min, t_end=end_in_min)
+    time = np.array([i for i in msdata.time if start_in_min <= i <= end_in_min])
     smooth_sig, midline = get_baseline(intense, time, smooth_num, smooth_poly,
                                        baseline_poly, signal_weight, target_mass, pola)
     # 获取smooth切割点
