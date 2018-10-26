@@ -68,10 +68,10 @@ dic_id = be.check_all_sig(dic_msdata, mspola, signal_weight=0.8)
 ###df_p, df_n = be.extract_all_mz(out_path, ms1, mspola, id_p, id_n,
 ###                               intensity_thre=intensity_threshould)
 
-df_p, df_n, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, '+', dic_id, intensity_thre=5e4, min_num=5)
+df_dic, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, mspola, dic_id, intensity_thre=1e4, min_num=5)
 
 # 不生成时间-强度矩阵&信号提取矩阵
-df_p, df_n, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, mspola, id_p, id_n, intensity_thre=1e5, ext_matrix=False, ext_signal=False)
+# df_intensity, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, mspola, id_p, id_n, intensity_thre=1e5, ext_matrix=False, ext_signal=False)
 
 
 ###input('Please enter any key to exit.')
@@ -91,39 +91,39 @@ df_p, df_n, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, mspola, id_p
 # In[5] 列表中m/z靶向批量提取
 
 
+#df_scr = pd.read_csv(list_path)
+#
+#pola = set(df_scr.Polarity)
+#for i in pola:
+#
+#
+#dic_scr = {'+':df_scr[df_scr.Polarity == 'POS'], '-':df_scr[df_scr.Polarity == 'NEG']}
+#
+#i = '+'
+#mzunique = dic_scr[i]['m/z']
+#
+#dic_scr.get('2', [])
+#dic_scr2.get('2', [])
 
 
 
+# In[] 运行速度调试
 
-# In[5] 目标离子提取
+#import profile
+#profile.run('df_dic, mzlist_unique = be.extract_all_mz(out_path, dic_msdata, mspola, dic_id, intensity_thre=1e6, min_num=5)')
+
+#%timeit -n 100 a = ms_pos.eic(118.0654)
+#8.66 ms ± 145 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
 #
-#input_path_target, output_path_target = be.gen_workspace('Input_list_1_Targeted ion list.csv')
-#
-#
-#
-## In[]
-#
-#
-#import matplotlib.pyplot as plt
-#import seaborn as sns
-#
-#
-#int_pos = df_intense_p.iloc[:, 1:-1]
-#index_name = [round(i,4) for i in df_intense_p['m/z']]
-#int_pos.index = index_name
-#column_name = [round(i,2) for i in int_pos.columns]
-#int_pos.columns = column_name
-#
-#sns.set()
-#
-#g= sns.clustermap(int_pos, fmt="d", cmap='YlGnBu', z_score=0, col_cluster=False, figsize=(12, 12))
-#ax = g.ax_heatmap
-#ax.set_title('Hierarchical Clustering', fontsize=16)
-#ax.tick_params(axis='y',labelsize=12)
-#ax.set_xticklabels([])
-#ax.set_xlabel('time',fontsize=16)
-#ax.set_ylabel('m/z',fontsize=16)
-#plt.show()
-#
+#%timeit -n 100 a = ms_pos.eic(149.0233)
+#8.64 ms ± 36.3 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
+
+#import numpy as np
+#target_mass = 149.0
+#scan_index = range(0,126)
+#spec_ms = ms_pos.data[1].peaks
+#mzs = spec_ms[:, 0]
+#intense = spec_ms[:, 1]
+#index = np.argwhere((mzs > (target_mass - tolerance)) & (mzs < (target_mass + tolerance)))
 
 

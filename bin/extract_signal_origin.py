@@ -19,11 +19,12 @@ class Massdata:
         target_intense = []
         for i in scan_index:
             spec_ms = self.data[i].peaks
-            mzs, intense = spec_ms[:, 0], spec_ms[:, 1]
+            mzs = spec_ms[:, 0]
+            intense = spec_ms[:, 1]
             # 获取目标离子窗口中强度最高的离子
             index = np.argwhere((mzs > (target_mass - tolerance)) & (mzs < (target_mass + tolerance)))
             # 将0强度点改成非0数字，防止除零错误出现
-            intense_max = int(np.max(intense[index])) if len(index) != 0 else 0.01
+            intense_max = int(max(intense[index])) if len(index) != 0 else 0.01
             target_intense.append(intense_max)
         return np.array(target_intense)
 
