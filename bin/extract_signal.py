@@ -143,16 +143,16 @@ def plot_detect_result(intense, time, smooth, baseline_normal,
 
 
 # 获取底部和顶部基线，取平均获得中间分割线
-def get_baseline(intense, time, smooth_num=7, smooth_poly=1,
+def get_baseline(intense, time, smooth_window=7, smooth_poly=1,
                  baseline_poly=1, signal_weight=0.9, title='TIC', pola=''):
     # Savitzky–Golay滤波平滑
     # 获得底部baseline
-    smooth = signal.savgol_filter(intense, smooth_num,
+    smooth = signal.savgol_filter(intense, smooth_window,
                                   smooth_poly, mode='nearest')
     baseline_normal = peakutils.baseline(smooth, baseline_poly)
     # 获得顶部baseline
     intense_reverse = [-i for i in intense]
-    smooth_reversed = signal.savgol_filter(intense_reverse, smooth_num, smooth_poly, mode='nearest')
+    smooth_reversed = signal.savgol_filter(intense_reverse, smooth_window, smooth_poly, mode='nearest')
     baseline_reversed = peakutils.baseline(smooth_reversed, baseline_poly)
     # 获得切割线，底部基线权重较大
     midline = (baseline_normal - signal_weight * baseline_reversed) / 2
@@ -163,14 +163,14 @@ def get_baseline(intense, time, smooth_num=7, smooth_poly=1,
 
 
 # 获得有效信号index
-def get_key_index(msdata, pola, target_mass=0, smooth_num=7, smooth_poly=1, baseline_poly=1,
+def get_key_index(msdata, pola, target_mass=0, smooth_window=7, smooth_poly=1, baseline_poly=1,
                   index_window=3, spec_num=8, signal_weight=0.9, start_in_min=0, end_in_min=0):
 #    start_scan, end_scan = time_to_scannum(msdata, '+', start_time, end_time)
     if end_in_min == 0:
         end_in_min = msdata.time[-1]
     intense = msdata.eic(target_mass, t_start=start_in_min, t_end=end_in_min)
     time = np.array([i for i in msdata.time if start_in_min <= i <= end_in_min])
-    smooth_sig, midline = get_baseline(intense, time, smooth_num, smooth_poly,
+    smooth_sig, midline = get_baseline(intense, time, smooth_window, smooth_poly,
                                        baseline_poly, signal_weight, target_mass, pola)
     # 获取smooth切割点
     smooth_adjust = smooth_sig - midline
